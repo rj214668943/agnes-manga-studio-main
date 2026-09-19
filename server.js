@@ -23,7 +23,7 @@ const os = require('node:os');
 const { spawn, execFile } = require('node:child_process');
 const { createRequire } = require('node:module');
 
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 /** 改动前端后递增，exe 会在下次启动重新释放页面 */
 const ASSETS_VERSION = VERSION;
 
@@ -63,7 +63,13 @@ function materializeAssets() {
   if (stamp === ASSETS_VERSION) return;
 
   fs.mkdirSync(APP_HOME, { recursive: true });
-  for (const key of sea.getAssetKeys()) {
+
+  // Node 20 的 node:sea 不提供 getAssetKeys()，因此由构建脚本把资源键列表
+  // 写入一个 manifest，再通过 getAsset(manifest) 读取。这样不会依赖不存在的 API。
+  const manifest = JSON.parse(
+    Buffer.from(sea.getAsset('__agnes_asset_manifest.json')).toString('utf8')
+  );
+  for (const key of manifest) {
     if (!key.startsWith('public/') && !key.startsWith('lib/')) continue;
     const dest = path.join(APP_HOME, key);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -353,6 +359,6 @@ function openBrowser(url) {
 
 process.on('SIGINT', () => { console.log('\n正在退出…'); process.exit(0); });
 
-if (require.main === module) listen(START_PORT);
+if (require.main === module || IS_SEA) listen(START_PORT);
 
 module.exports = { server, listen, APP_HOME, VERSION };
