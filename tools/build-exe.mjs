@@ -78,7 +78,13 @@ async function build() {
         console.error('❌ SEA 资源收集失败：缺少 lib/store.js 或 public/index.html');
         process.exit(1);
     }
-    console.log(`📦 将内嵌 ${assetKeys.length} 个资源文件`);
+
+    // Node 20 的 node:sea 没有 getAssetKeys()，把资源键名单独作为 SEA asset 内嵌。
+    const manifestPath = path.join(distDir, 'agnes-asset-manifest.json');
+    fs.writeFileSync(manifestPath, JSON.stringify(assetKeys), 'utf8');
+    assets['__agnes_asset_manifest.json'] = manifestPath;
+
+    console.log(`📦 将内嵌 ${assetKeys.length} 个资源文件 + 1 个资源清单`);
 
     // 4. 生成 sea-config.json
     const seaConfig = {
