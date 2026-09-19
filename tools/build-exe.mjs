@@ -7,132 +7,93 @@
  * 用法：node tools/build-exe.mjs
  * 可选：node tools/build-exe.mjs --out Agnes漫剧工坊.exe
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
-const BUILD = path.join(ROOT, 'build');
-const DIST = path.join(ROOT, 'dist');
-const NODE = process.execPath;
-const NODE_DIR = path.dirname(NODE);
-const WORKSPACE = path.join(process.env.USERPROFILE || '', '.workbuddy-ai', 'binaries', 'node', 'workspace');
-const POSTJECT_ROOT = path.join(WORKSPACE, 'node_modules', 'postject');
-const postjectRequire = createRequire(path.join(POSTJECT_ROOT, 'package.json'));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
 
-const argv = process.argv.slice(2);
-const valueOf = (flag, fallback) => {
-  const i = argv.indexOf(flag);
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
-};
-const OUT_NAME = valueOf('--out', 'Agnes漫剧工坊.exe');
-const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version || '0.0.0';
+// ================= 配置区域 =================
+// ⚠️ 请检查这里的入口文件是否正确！
+// 如果你的主入口是 index.js 或 main.js，请修改下面的 'server.js'
+const entryFile = path.join(rootDir, 'server.js'); 
+const distDir = path.join(rootDir, 'dist');
+const blobPath = path.join(distDir, 'sea-prep.blob');
+const exePath = path.join(distDir, 'Agnes漫剧工坊.exe'); // 生成的exe名称
+const seaConfigPath = path.join(rootDir, 'sea-config.json');
+// ============================================
 
-const log = (n, s) => console.log(`\n[${n}] ${s}`);
-const size = (n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
+function runCommand(cmd) {
+    try {
+        execSync(cmd, { stdio: 'inherit', cwd: rootDir });
+    } catch (error) {
+        console.error(`\n❌ 执行命令失败: ${cmd}`);
+        process.exit(1);
+    }
 }
 
-function walk(dir, base = dir, out = []) {
-  if (!fs.existsSync(dir)) return out;
-  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) walk(full, base, out);
-    else if (ent.isFile()) out.push(path.relative(base, full).split(path.sep).join('/'));
-  }
-  return out;
+async function build() {
+    console.log('🚀 开始打包 EXE...');
+
+    // 1. 检查入口文件
+    if (!fs.existsSync(entryFile)) {
+        console.error(`❌ 找不到入口文件: ${entryFile}`);
+        console.error(`👉 请打开 tools/build-exe.mjs，修改 entryFile 变量为你项目的真正入口（如 index.js、main.js 或 app.js）`);
+        process.exit(1);
+    }
+
+    // 2. 创建 dist 目录
+    if (!fs.existsSync(distDir)) {
+        fs.mkdirSync(distDir, { recursive: true });
+    }
+
+    // 3. 生成 sea-config.json
+    const seaConfig = {
+        main: entryFile,
+        output: blobPath,
+        disableExperimentalSEAWarning: true,
+        useSnapshot: false,
+        useCodeCache: false
+    };
+    fs.writeFileSync(seaConfigPath, JSON.stringify(seaConfig, null, 2));
+    console.log('✅ 已生成 sea-config.json');
+
+    // 4. 生成 SEA blob
+    console.log('⏳ 正在生成 SEA blob...');
+    runCommand(`node --experimental-sea-config sea-config.json`);
+
+    // 5. 复制 Node.js 可执行文件
+    console.log('⏳ 正在复制 Node.js 可执行文件...');
+    const nodeExe = process.execPath;
+    fs.copyFileSync(nodeExe, exePath);
+
+    // 6. 寻找 postject（修复找不到 postject 的问题）
+    console.log('⏳ 正在寻找 postject 工具...');
+    let postjectCmd = '';
+    
+    // 优先使用项目 node_modules 里安装的 postject
+    const localPostject = path.join(rootDir, 'node_modules', '.bin', process.platform === 'win32' ? 'postject.cmd' : 'postject');
+    
+    if (fs.existsSync(localPostject)) {
+        postjectCmd = `"${localPostject}"`;
+        console.log('✅ 找到本地 postject');
+    } else {
+        console.log('⚠️ 未在本地 node_modules 找到 postject，尝试使用 npx...');
+        postjectCmd = 'npx postject';
+    }
+
+    // 7. 注入 SEA blob
+    console.log('⏳ 正在注入 SEA blob 到 exe...');
+    // Node.js 20 版本的 Sentinel Fuse
+    const sentinelFuse = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'; 
+    const injectCommand = `${postjectCmd} "${exePath}" NODE_SEA_BLOB "${blobPath}" --sentinel-fuse ${sentinelFuse}`;
+    
+    runCommand(injectCommand);
+
+    console.log(`\n🎉 打包成功！生成的 exe 文件位于: ${exePath}`);
 }
 
-function findFuse(exePath) {
-  const buf = fs.readFileSync(exePath);
-  const m = /NODE_SEA_FUSE_[0-9a-f]+/.exec(buf.toString('latin1'));
-  assert(m, 'node.exe 中没有 SEA fuse；请换 Node 20+ 官方构建');
-  // 关键：不要把后面的 :0 带进去
-  return m[0];
-}
-
-function run(command, args, label) {
-  const r = spawnSync(command, args, { cwd: ROOT, stdio: 'inherit', windowsHide: false });
-  if (r.error) throw new Error(`${label}：${r.error.message}`);
-  if (r.status !== 0) throw new Error(`${label}失败，退出码 ${r.status}`);
-}
-
-async function main() {
-  assert(process.platform === 'win32', '这个打包脚本只用于 Windows');
-  assert(Number(process.versions.node.split('.')[0]) >= 20, `Node 版本过低：${process.versions.node}`);
-  assert(fs.existsSync(path.join(ROOT, 'server.js')), '缺少 server.js');
-  assert(fs.existsSync(path.join(ROOT, 'public', 'index.html')), '缺少 public/index.html');
-  assert(fs.existsSync(POSTJECT_ROOT), `缺少 postject：${POSTJECT_ROOT}`);
-
-  fs.mkdirSync(BUILD, { recursive: true });
-  fs.mkdirSync(DIST, { recursive: true });
-
-  // 1. 收集静态资源。数据目录不打进 exe，避免把用户数据污染进发行包。
-  log(1, '收集内嵌资源');
-  const assets = {};
-  for (const rel of walk(path.join(ROOT, 'lib'))) {
-    assets[`lib/${rel}`] = path.join(ROOT, 'lib', rel);
-  }
-  for (const rel of walk(path.join(ROOT, 'public'))) {
-    assets[`public/${rel}`] = path.join(ROOT, 'public', rel);
-  }
-  const assetList = Object.keys(assets);
-  const assetBytes = Object.values(assets).reduce((n, file) => n + fs.statSync(file).size, 0);
-  console.log(`  ${assetList.length} 个资源，总计 ${size(assetBytes)}`);
-
-  // 2. SEA 配置。主脚本直接用源码 server.js；资源通过 assets 字段注入。
-  log(2, '生成 SEA blob');
-  const mainPath = path.join(BUILD, 'main.cjs');
-  const configPath = path.join(BUILD, 'sea-config.json');
-  const blobPath = path.join(BUILD, 'sea-prep.blob');
-  const mainSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
-  // server.js 自己不依赖外部包；lib/public 通过 sea.getAsset() 释放。
-  fs.writeFileSync(mainPath, mainSrc, 'utf8');
-  fs.writeFileSync(configPath, JSON.stringify({
-    main: mainPath,
-    output: blobPath,
-    disableExperimentalSEAWarning: true,
-    useSnapshot: false,
-    useCodeCache: false,
-    assets,
-  }, null, 2), 'utf8');
-  run(NODE, ['--experimental-sea-config', configPath], 'SEA blob');
-  assert(fs.existsSync(blobPath), 'SEA blob 没有生成');
-  console.log(`  blob ${size(fs.statSync(blobPath).size)}`);
-
-  // 3. 复制运行时并注入。
-  log(3, '注入 Node 运行时');
-  const tmpExe = path.join(BUILD, `AgnesStudio-${process.pid}.exe`);
-  const outExe = path.join(DIST, OUT_NAME);
-  fs.copyFileSync(NODE, tmpExe);
-  const fuse = findFuse(tmpExe);
-  console.log(`  fuse ${fuse}`);
-
-  const postject = postjectRequire('postject');
-  await postject.inject(tmpExe, 'NODE_SEA_BLOB', fs.readFileSync(blobPath), {
-    sentinelFuse: fuse,
-  });
-  fs.copyFileSync(tmpExe, outExe);
-  console.log(`  产物 ${outExe}`);
-  console.log(`  大小 ${size(fs.statSync(outExe).size)}`);
-
-  // 4. 写一个 portable 标记：双击 exe 后数据落在 exe 同级 data/，
-  //    这更符合「拷走就能用」的便携程序直觉。用户删掉 portable 后，
-  //    仍可走 %LOCALAPPDATA%/AgnesStudio。
-  const portable = path.join(DIST, 'portable');
-  if (!fs.existsSync(portable)) fs.writeFileSync(portable, '', 'utf8');
-
-  console.log('\n✓ 打包完成');
-  console.log(`  双击：${outExe}`);
-  console.log(`  数据：${path.join(DIST, 'data')}`);
-}
-
-main().catch((e) => {
-  console.error(`\n✗ ${e.message}`);
-  process.exit(1);
-});
+build();
