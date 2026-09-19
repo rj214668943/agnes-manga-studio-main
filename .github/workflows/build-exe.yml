@@ -9,6 +9,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -16,7 +19,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install  # 👈 这里从 npm ci 改成了 npm install
 
       - name: Build EXE
         run: node tools/build-exe.mjs
@@ -26,3 +29,4 @@ jobs:
         with:
           name: Agnes-Manga-Studio-EXE
           path: dist/*.exe
+          if-no-files-found: error
