@@ -19,7 +19,9 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install  # 👈 这里从 npm ci 改成了 npm install
+        run: |
+          npm install
+          npm install postject  # 👈 新增这一行，手动安装 postject
 
       - name: Build EXE
         run: node tools/build-exe.mjs
