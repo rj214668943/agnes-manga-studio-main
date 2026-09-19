@@ -2,6 +2,13 @@ name: Build Windows EXE
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'server.js'
+      - 'lib/**'
+      - 'public/**'
+      - 'tools/build-exe.mjs'
+      - '.github/workflows/build-exe.yml'
 
 jobs:
   build:
