@@ -30,7 +30,9 @@ jobs:
         shell: pwsh
         run: |
           $exe = Resolve-Path "dist\Agnes漫剧工坊.exe"
-          $p = Start-Process -FilePath $exe -PassThru
+          $stdout = Join-Path $env:RUNNER_TEMP "agnes-exe.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "agnes-exe.stderr.log"
+          $p = Start-Process -FilePath $exe -ArgumentList @() -WorkingDirectory (Split-Path $exe) -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           try {
             $ok = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -41,6 +43,10 @@ jobs:
               } catch {}
               if ($p.HasExited) { break }
             }
+            Write-Host "--- EXE stdout ---"
+            if (Test-Path $stdout) { Get-Content $stdout -Raw }
+            Write-Host "--- EXE stderr ---"
+            if (Test-Path $stderr) { Get-Content $stderr -Raw }
             if (-not $ok) {
               if ($p.HasExited) { throw "EXE exited early with code $($p.ExitCode)" }
               throw "EXE started but /api/health did not become ready"
